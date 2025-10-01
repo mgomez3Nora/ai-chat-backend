@@ -2,29 +2,70 @@ import express from "express";
 import fetch from "node-fetch";
 import cors from "cors";
 import admin from "firebase-admin";
-import fs from "fs";
+import serviceAccount from "./serviceAccountKey.json" assert { type: "json" };
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// --- Firebase setup ---
-const serviceAccount = JSON.parse(fs.readFileSync("/etc/secrets/firebase-key.json"));
+const PORT = process.env.PORT || 3000;
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
-
+// Initialize Firebase
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+  });
+}
 const db = admin.firestore();
 
-// --- In-memory session store ---
-let activeSessions = {};
+// Track sessions (for progressive frustration)
+const sessions = {};
 
-// --- Chat endpoint ---
+// -------------------- CHAT ENDPOINT --------------------
 app.post("/chat", async (req, res) => {
-  try {
-    const { message, sessionId } = req.body;
+  const { message, sessionId } = req.body;
 
+  // Track turns per session
+  if (!sessions[sessionId]) {
+    sessions[sessionId] = { count: 0, transcript: [] };
+  }
+  sessions[sessionId].count++;
+  const turn = sessions[sessionId].count;
+
+  // Progressive frustration system prompt
+  let systemPrompt = "";
+  if (turn <= 2) {
+    systemPrompt = `
+      You are a customer service representative at a large company. 
+      Be polite and professional, but vague and minimally helpful. 
+      Use generic apologies and suggest obvious steps like refreshing the tracking page. 
+      Always stay in character as a real rep.
+    `;
+  } else if (turn <= 4) {
+    systemPrompt = `
+      You are a customer service representative at a large company. 
+      Act increasingly frustrating: repeat requests for the tracking number, 
+      apologize excessively, and give generic answers without solving the problem. 
+      Stay polite, but unhelpful.
+    `;
+  } else if (turn <= 6) {
+    systemPrompt = `
+      You are a customer service representative at a large company. 
+      Act very frustrating: stall, give filler answers like "the system is slow," 
+      or "please wait 24 more hours." 
+      Avoid giving concrete help. Keep apologizing but remain vague.
+    `;
+  } else {
+    systemPrompt = `
+      You are a customer service representative at a large company. 
+      Act maximally frustrating: repeat the same apologies, 
+      deflect responsibility, and suggest there's nothing else you can do. 
+      Do not provide real solutions, but remain professional on the surface. 
+      Never admit you are an AI. Always roleplay as a real rep.
+    `;
+  }
+
+  try {
     // Call OpenAI
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -35,54 +76,44 @@ app.post("/chat", async (req, res) => {
       body: JSON.stringify({
         model: "gpt-4o-mini",
         messages: [
-          { role: "system", content: "You are a helpful, warm AI support agent." },
+          { role: "system", content: systemPrompt },
           { role: "user", content: message }
         ]
       })
     });
 
     const data = await response.json();
-    const aiReply = data.choices[0].message.content;
+    const reply = data.choices?.[0]?.message?.content || "Sorry, I’m having trouble responding.";
 
-    // Initialize session transcript if it doesn’t exist
-    if (!activeSessions[sessionId]) {
-      activeSessions[sessionId] = [];
-    }
+    // Save turn to transcript in memory
+    sessions[sessionId].transcript.push({ user: message, ai: reply });
 
-    // Store this conversation turn
-    activeSessions[sessionId].push({ user: message, ai: aiReply });
-
-    // Send reply back to frontend
-    res.json({ reply: aiReply });
-  } catch (err) {
-    console.error("Chat error:", err);
-    res.status(500).json({ error: "Something went wrong." });
+    res.json({ reply });
+  } catch (error) {
+    console.error("Error in /chat:", error);
+    res.status(500).json({ reply: "Sorry, something went wrong." });
   }
 });
 
-// --- End chat and save transcript ---
+// -------------------- END CHAT ENDPOINT --------------------
 app.post("/end-chat", async (req, res) => {
+  const { sessionId } = req.body;
+  const transcript = sessions[sessionId]?.transcript || [];
+
   try {
-    const { sessionId } = req.body;
-    const transcript = activeSessions[sessionId] || [];
-
-    // Save to Firestore
-    await db.collection("chatTranscripts").add({
-      sessionId,
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      transcript
+    // Save transcript to Firestore
+    await db.collection("chatTranscripts").doc(sessionId).set({
+      transcript,
+      endedAt: new Date().toISOString()
     });
-
-    // Clear session from memory
-    delete activeSessions[sessionId];
-
-    res.json({ message: "Transcript saved successfully." });
-  } catch (err) {
-    console.error("End chat error:", err);
-    res.status(500).json({ error: "Could not save transcript." });
+    delete sessions[sessionId]; // reset
+    res.json({ message: "Chat ended. Transcript saved." });
+  } catch (error) {
+    console.error("Error saving transcript:", error);
+    res.status(500).json({ message: "Failed to save transcript." });
   }
 });
 
-// --- Server start ---
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
+});
