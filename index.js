@@ -1,34 +1,3 @@
-import express from "express";
-import fetch from "node-fetch";
-import cors from "cors";
-import admin from "firebase-admin";
-import fs from "fs";
-
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-const PORT = process.env.PORT || 3000;
-
-// Load Firebase service account JSON from secrets file
-let serviceAccount = null;
-try {
-  const keyPath = "/etc/secrets/firebase-key.json";
-  serviceAccount = JSON.parse(fs.readFileSync(keyPath, "utf8"));
-} catch (err) {
-  console.error("❌ Failed to load Firebase service account:", err);
-}
-
-if (!admin.apps.length && serviceAccount) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-  });
-}
-const db = admin.firestore();
-
-// Track sessions
-const sessions = {};
-
 // -------------------- CHAT ENDPOINT --------------------
 app.post("/chat", async (req, res) => {
   const { message, sessionId } = req.body;
@@ -116,34 +85,18 @@ Behavior by turns:
       data?.choices?.[0]?.message?.content?.trim() ||
       "Sorry, I’m having trouble responding.";
 
+    // Save transcript
     sessions[sessionId].transcript.push({ user: message, ai: reply });
 
-    res.json({ reply, dummyData: sessions[sessionId].dummyData }); 
+    // Simulated typing delay: 60ms per character (uncapped)
+    const typingDelay = reply.length * 60;
+
+    setTimeout(() => {
+      res.json({ reply, dummyData: sessions[sessionId].dummyData });
+    }, typingDelay);
+
   } catch (error) {
     console.error("Error in /chat:", error);
     res.status(500).json({ reply: "Sorry, something went wrong." });
   }
-});
-
-// -------------------- END CHAT ENDPOINT --------------------
-app.post("/end-chat", async (req, res) => {
-  const { sessionId } = req.body;
-  const transcript = sessions[sessionId]?.transcript || [];
-
-  try {
-    await db.collection("chatTranscripts").doc(sessionId).set({
-      transcript,
-      dummyData: sessions[sessionId]?.dummyData || {},
-      endedAt: new Date().toISOString()
-    });
-    delete sessions[sessionId];
-    res.json({ message: "Chat ended. Transcript saved." });
-  } catch (error) {
-    console.error("Error saving transcript:", error);
-    res.status(500).json({ message: "Failed to save transcript." });
-  }
-});
-
-app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
 });
