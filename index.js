@@ -65,7 +65,7 @@ app.post("/chat", async (req, res) => {
   }
 
   try {
-    // Build full conversation
+    // Build full conversation (include history)
     const conversation = [
       { role: "system", content: systemPrompt },
       ...sessions[sessionId].transcript.flatMap((t) => [
@@ -87,6 +87,13 @@ app.post("/chat", async (req, res) => {
         messages: conversation
       })
     });
+
+    // ✅ Extra error logging
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error("OpenAI API Error:", response.status, errText);
+      return res.status(500).json({ reply: "Sorry, the AI had an issue. Please try again." });
+    }
 
     const data = await response.json();
     const reply = data.choices?.[0]?.message?.content || "Sorry, I’m having trouble responding.";
