@@ -2,7 +2,7 @@ import express from "express";
 import fetch from "node-fetch";
 import cors from "cors";
 import admin from "firebase-admin";
-import serviceAccount from "./serviceAccountKey.json" assert { type: "json" };
+import serviceAccount from "./serviceAccountKey.json";  // ✅ fixed import
 
 const app = express();
 app.use(cors());
