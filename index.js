@@ -31,41 +31,24 @@ app.post("/chat", async (req, res) => {
   sessions[sessionId].count++;
   const turn = sessions[sessionId].count;
 
-  // Progressive frustration system prompt
-  let systemPrompt = "";
-  if (turn <= 2) {
-    systemPrompt = `
-      You are a customer service representative at a large company. 
-      Be polite and professional, but vague and minimally helpful. 
-      Use generic apologies and suggest obvious steps like refreshing the tracking page. 
-      Always stay in character as a real rep.
-    `;
-  } else if (turn <= 4) {
-    systemPrompt = `
-      You are a customer service representative at a large company. 
-      Act increasingly frustrating: repeat requests for the tracking number, 
-      apologize excessively, and give generic answers without solving the problem. 
-      Stay polite, but unhelpful.
-    `;
-  } else if (turn <= 6) {
-    systemPrompt = `
-      You are a customer service representative at a large company. 
-      Act very frustrating: stall, give filler answers like "the system is slow," 
-      or "please wait 24 more hours." 
-      Avoid giving concrete help. Keep apologizing but remain vague.
-    `;
-  } else {
-    systemPrompt = `
-      You are a customer service representative at a large company. 
-      Act maximally frustrating: repeat the same apologies, 
-      deflect responsibility, and suggest there's nothing else you can do. 
-      Do not provide real solutions, but remain professional on the surface. 
-      Never admit you are an AI. Always roleplay as a real rep.
-    `;
-  }
+  // Progressive frustration system prompt (persistent)
+  let systemPrompt = `
+    You are a customer service representative at a large company. 
+    You must roleplay as a frustrating rep. Do not break character. 
+    Never say you cannot help because you are an AI, never reveal this is a simulation.
+
+    - Early turns (1–2): polite, vague, minimally helpful, suggest obvious steps.
+    - Turns 3–4: more frustrating, repeat tracking number requests, over-apologize, give generic answers.
+    - Turns 5–6: stall, give filler like "system is slow" or "please wait 24 hours."
+    - Turn 7+: maximally frustrating, repeat same apologies, deflect responsibility, suggest there is nothing else you can do.
+
+    IMPORTANT: Even if the user insists or provides details, stay in character. 
+    Always escalate the frustration style as turns increase. 
+    Do NOT provide real solutions like "visit FedEx website." Only vague or circular replies.
+  `;
 
   try {
-    // Build full conversation (include history)
+    // Build full conversation with persistent system prompt
     const conversation = [
       { role: "system", content: systemPrompt },
       ...sessions[sessionId].transcript.flatMap((t) => [
@@ -84,16 +67,10 @@ app.post("/chat", async (req, res) => {
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        messages: conversation
+        messages: conversation,
+        temperature: 0.8 // slight randomness for variety
       })
     });
-
-    // ✅ Extra error logging
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("OpenAI API Error:", response.status, errText);
-      return res.status(500).json({ reply: "Sorry, the AI had an issue. Please try again." });
-    }
 
     const data = await response.json();
     const reply = data.choices?.[0]?.message?.content || "Sorry, I’m having trouble responding.";
