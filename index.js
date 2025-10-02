@@ -29,42 +29,20 @@ const db = admin.firestore();
 // Track sessions
 const sessions = {};
 
-// Dummy dataset (expand this with more!)
-const products = [
-  "Noise-Cancelling Headphones",
-  "Smart Fitness Watch",
-  "Wireless Keyboard",
-  "Gaming Mouse",
-  "Bluetooth Speaker",
-  "Coffee Maker",
-  "LED Desk Lamp"
-];
-const cities = [
-  { city: "Springfield", state: "Illinois" },
-  { city: "Columbus", state: "Ohio" },
-  { city: "Madison", state: "Wisconsin" },
-  { city: "Albany", state: "New York" }
-];
-
 // -------------------- CHAT ENDPOINT --------------------
 app.post("/chat", async (req, res) => {
   const { message, sessionId } = req.body;
 
-  // Initialize session with dummy data
+  // Initialize session with fixed dummy data
   if (!sessions[sessionId]) {
-    const randomProduct = products[Math.floor(Math.random() * products.length)];
-    const randomTracking = Math.floor(100000000 + Math.random() * 900000000).toString();
-    const randomCustomer = `Customer-${Math.floor(Math.random() * 1000)}`;
-    const randomLocation = cities[Math.floor(Math.random() * cities.length)];
-
     sessions[sessionId] = {
       count: 0,
       transcript: [],
       dummyData: {
-        customerName: randomCustomer,
-        product: randomProduct,
-        trackingNumber: randomTracking,
-        finalLocation: `${randomLocation.city}, ${randomLocation.state}`
+        customerName: "Alex Johnson",
+        product: "Smart Fitness Watch",
+        trackingNumber: "739182645",
+        finalLocation: "Springfield, IL"
       }
     };
   }
@@ -73,7 +51,7 @@ app.post("/chat", async (req, res) => {
   const turn = sessions[sessionId].count;
   const { customerName, product, trackingNumber, finalLocation } = sessions[sessionId].dummyData;
 
-  // Persona prompt tied to dummy data
+  // Persona prompt tied to fixed dummy data
   let systemPrompt = `
 You are roleplaying as a frustrating customer service representative at a shipping company. 
 The customer is contacting you about their package.
@@ -138,7 +116,7 @@ Behavior by turns:
 
     sessions[sessionId].transcript.push({ user: message, ai: reply });
 
-    res.json({ reply, dummyData: sessions[sessionId].dummyData }); // Send dummy data if frontend needs it
+    res.json({ reply, dummyData: sessions[sessionId].dummyData }); 
   } catch (error) {
     console.error("Error in /chat:", error);
     res.status(500).json({ reply: "Sorry, something went wrong." });
