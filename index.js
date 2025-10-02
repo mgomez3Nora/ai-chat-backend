@@ -29,38 +29,76 @@ const db = admin.firestore();
 // Track sessions
 const sessions = {};
 
+// Dummy dataset (expand this with more!)
+const products = [
+  "Noise-Cancelling Headphones",
+  "Smart Fitness Watch",
+  "Wireless Keyboard",
+  "Gaming Mouse",
+  "Bluetooth Speaker",
+  "Coffee Maker",
+  "LED Desk Lamp"
+];
+const cities = [
+  { city: "Springfield", state: "Illinois" },
+  { city: "Columbus", state: "Ohio" },
+  { city: "Madison", state: "Wisconsin" },
+  { city: "Albany", state: "New York" }
+];
+
 // -------------------- CHAT ENDPOINT --------------------
 app.post("/chat", async (req, res) => {
   const { message, sessionId } = req.body;
 
+  // Initialize session with dummy data
   if (!sessions[sessionId]) {
-    sessions[sessionId] = { count: 0, transcript: [] };
+    const randomProduct = products[Math.floor(Math.random() * products.length)];
+    const randomTracking = Math.floor(100000000 + Math.random() * 900000000).toString();
+    const randomCustomer = `Customer-${Math.floor(Math.random() * 1000)}`;
+    const randomLocation = cities[Math.floor(Math.random() * cities.length)];
+
+    sessions[sessionId] = {
+      count: 0,
+      transcript: [],
+      dummyData: {
+        customerName: randomCustomer,
+        product: randomProduct,
+        trackingNumber: randomTracking,
+        finalLocation: `${randomLocation.city}, ${randomLocation.state}`
+      }
+    };
   }
+
   sessions[sessionId].count++;
   const turn = sessions[sessionId].count;
+  const { customerName, product, trackingNumber, finalLocation } = sessions[sessionId].dummyData;
 
-  // Stronger persona enforcement
+  // Persona prompt tied to dummy data
   let systemPrompt = `
-You are roleplaying as a frustrating customer service representative at a large company. 
-Do NOT break character. Do NOT admit you are an AI. Do NOT provide real tracking help. 
-Your job is to sound empathetic but never actually solve the problem.
+You are roleplaying as a frustrating customer service representative at a shipping company. 
+The customer is contacting you about their package.
+
+Customer Info (use this in your replies):
+- Customer Name: ${customerName}
+- Product: ${product}
+- Tracking Number: ${trackingNumber}
 
 Rules:
+- Never admit you are an AI.
 - Always sound polite, professional, and apologetic.
 - Pretend to be helping but only stall, deflect, or repeat yourself.
-- Never provide real instructions like "visit the carrier website."
-- Keep responses short (2–5 sentences), like a CSR chat.
+- Frequently ask for the tracking number or product again, even if already given.
+- Sometimes ask for unnecessary details like address.
+- Keep responses 2–5 sentences, like a real CSR chat.
+- Do NOT reveal the package location until AFTER 10 turns.
+- On turn 11+, finally reveal: "Your package is currently in ${finalLocation}."
 
 Behavior by turns:
-- Turns 1–2: Polite but vague. Ask for obvious or redundant info (tracking number, name, address).
-- Turns 3–4: Repeat requests, over-apologize, give canned lines such as: "I completely understand, can you please confirm the tracking number again?"
-- Turns 5–6: Stall harder. Say "the system is running slow" or "please allow 24 hours." Avoid solutions.
-- Turn 7+: Maximally frustrating. Repeat apologies, deflect responsibility, suggest escalation, or send them in circles. Always stay professional.
-
-IMPORTANT:
-- Never solve the tracking issue.
-- Never say you cannot help. Instead: stall, deflect, apologize.
-- Never step out of character.
+- Turns 1–2: Polite but vague. Ask for obvious/redundant info (tracking number, name, product).
+- Turns 3–4: Repeat requests, over-apologize, generic answers.
+- Turns 5–6: Stall harder ("system is running slow", "please allow 24 hours").
+- Turns 7–10: Maximally frustrating. Repeat apologies, deflect responsibility, escalate, send them in circles.
+- Turn 11+: Reveal the city/state of the package.
 `;
 
   try {
@@ -100,7 +138,7 @@ IMPORTANT:
 
     sessions[sessionId].transcript.push({ user: message, ai: reply });
 
-    res.json({ reply });
+    res.json({ reply, dummyData: sessions[sessionId].dummyData }); // Send dummy data if frontend needs it
   } catch (error) {
     console.error("Error in /chat:", error);
     res.status(500).json({ reply: "Sorry, something went wrong." });
@@ -115,6 +153,7 @@ app.post("/end-chat", async (req, res) => {
   try {
     await db.collection("chatTranscripts").doc(sessionId).set({
       transcript,
+      dummyData: sessions[sessionId]?.dummyData || {},
       endedAt: new Date().toISOString()
     });
     delete sessions[sessionId];
