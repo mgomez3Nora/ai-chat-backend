@@ -2,7 +2,7 @@ import express from "express";
 import fetch from "node-fetch";
 import cors from "cors";
 import admin from "firebase-admin";
-import serviceAccount from "/etc/secrets/firebase-key.json" assert { type: "json" };  // ✅ fixed import
+import serviceAccount from "/etc/secrets/firebase-key.json" assert { type: "json" };
 
 const app = express();
 app.use(cors());
@@ -18,14 +18,13 @@ if (!admin.apps.length) {
 }
 const db = admin.firestore();
 
-// Track sessions (for progressive frustration)
+// Track sessions
 const sessions = {};
 
 // -------------------- CHAT ENDPOINT --------------------
 app.post("/chat", async (req, res) => {
   const { message, sessionId } = req.body;
 
-  // Track turns per session
   if (!sessions[sessionId]) {
     sessions[sessionId] = { count: 0, transcript: [] };
   }
@@ -66,6 +65,16 @@ app.post("/chat", async (req, res) => {
   }
 
   try {
+    // Build full conversation
+    const conversation = [
+      { role: "system", content: systemPrompt },
+      ...sessions[sessionId].transcript.flatMap((t) => [
+        { role: "user", content: t.user },
+        { role: "assistant", content: t.ai }
+      ]),
+      { role: "user", content: message }
+    ];
+
     // Call OpenAI
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -75,17 +84,14 @@ app.post("/chat", async (req, res) => {
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: message }
-        ]
+        messages: conversation
       })
     });
 
     const data = await response.json();
     const reply = data.choices?.[0]?.message?.content || "Sorry, I’m having trouble responding.";
 
-    // Save turn to transcript in memory
+    // Save turn
     sessions[sessionId].transcript.push({ user: message, ai: reply });
 
     res.json({ reply });
@@ -101,12 +107,11 @@ app.post("/end-chat", async (req, res) => {
   const transcript = sessions[sessionId]?.transcript || [];
 
   try {
-    // Save transcript to Firestore
     await db.collection("chatTranscripts").doc(sessionId).set({
       transcript,
       endedAt: new Date().toISOString()
     });
-    delete sessions[sessionId]; // reset
+    delete sessions[sessionId];
     res.json({ message: "Chat ended. Transcript saved." });
   } catch (error) {
     console.error("Error saving transcript:", error);
