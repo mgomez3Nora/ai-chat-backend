@@ -2,7 +2,7 @@ import express from "express";
 import fetch from "node-fetch";
 import cors from "cors";
 import admin from "firebase-admin";
-import serviceAccount from "/etc/secrets/firebase-key.json" assert { type: "json" };
+import fs from "fs";
 
 const app = express();
 app.use(cors());
@@ -10,10 +10,18 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// Initialize Firebase
-if (!admin.apps.length) {
+// Load Firebase service account JSON from secrets file
+let serviceAccount = null;
+try {
+  const keyPath = "/etc/secrets/firebase-key.json";
+  serviceAccount = JSON.parse(fs.readFileSync(keyPath, "utf8"));
+} catch (err) {
+  console.error("❌ Failed to load Firebase service account:", err);
+}
+
+if (!admin.apps.length && serviceAccount) {
   admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
+    credential: admin.credential.cert(serviceAccount),
   });
 }
 const db = admin.firestore();
